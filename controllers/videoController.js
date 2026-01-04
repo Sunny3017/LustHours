@@ -59,6 +59,9 @@ exports.uploadVideo = asyncHandler(async (req, res, next) => {
 // @access  Public
 exports.getVideos = asyncHandler(async (req, res, next) => {
   const { search } = req.query;
+  const limit = 30;
+  let page = parseInt(req.query.page, 10);
+  if (isNaN(page) || page < 1) page = 1;
   
   let query = { status: 'approved' };
   
@@ -70,14 +73,26 @@ exports.getVideos = asyncHandler(async (req, res, next) => {
     ];
   }
 
-  const videos = await Video.find(query)
-    .populate('creator', 'username name profilePicture profileImage')
-    .sort('-createdAt');
+  const totalVideos = await Video.countDocuments(query);
+  const totalPages = totalVideos === 0 ? 0 : Math.ceil(totalVideos / limit);
+
+  let videos = [];
+  if (totalVideos > 0 && page <= totalPages) {
+    const skip = (page - 1) * limit;
+    videos = await Video.find(query)
+      .populate('creator', 'username name profilePicture profileImage')
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit);
+  }
 
   res.status(200).json({
     success: true,
     count: videos.length,
-    data: videos
+    data: videos,
+    currentPage: page,
+    totalPages,
+    totalVideos
   });
 });
 
@@ -483,21 +498,19 @@ exports.toggleLike = asyncHandler(async (req, res, next) => {
   );
 
   if (isLiked) {
-    // Unlike: Remove from user's likedVideos and video's likes array
+    // Unlike: Remove from user's likedVideos and decrement video's likes count
     user.likedVideos = user.likedVideos.filter(
       likedVideo => likedVideo.toString() !== videoId
     );
-    video.likes = video.likes.filter(
-      like => like.toString() !== userId
-    );
+    const currentLikes = typeof video.likes === 'number' ? video.likes : 0;
+    video.likes = Math.max(0, currentLikes - 1);
   } else {
-    // Like: Add to both arrays (prevent duplicates)
+    // Like: Add to user's likedVideos and increment video's likes count
     if (!user.likedVideos.some(v => v.toString() === videoId)) {
       user.likedVideos.push(videoId);
     }
-    if (!video.likes.some(u => u.toString() === userId)) {
-      video.likes.push(userId);
-    }
+    const currentLikes = typeof video.likes === 'number' ? video.likes : 0;
+    video.likes = currentLikes + 1;
   }
 
   await Promise.all([user.save(), video.save()]);
@@ -510,7 +523,7 @@ exports.toggleLike = asyncHandler(async (req, res, next) => {
     success: true,
     data: {
       isLiked: !isLiked,
-      likesCount: updatedVideo.likes.length,
+      likesCount: typeof updatedVideo.likes === 'number' ? updatedVideo.likes : 0,
       video: updatedVideo
     }
   });
@@ -584,32 +597,15 @@ exports.updateVideoMetrics = asyncHandler(async (req, res, next) => {
 
   // Validate and update likes
   if (likes !== undefined) {
-    // Validate likes is a number and non-negative
+    // Validate likes is a positive integer up to 100,000,000
     const likesNum = parseInt(likes, 10);
-    if (isNaN(likesNum) || likesNum < 0) {
-      return next(new ErrorResponse('Likes must be a non-negative number', 400));
+    if (!Number.isInteger(likesNum) || likesNum <= 0) {
+      return next(new ErrorResponse('Likes must be a positive integer', 400));
     }
-
-    // Get current likes count
-    const currentLikesCount = video.likes ? video.likes.length : 0;
-    const likesDelta = likesNum - currentLikesCount;
-    
-    // Safety Limit: Max 10,000 likes change per request to prevent blocking
-    if (Math.abs(likesDelta) > 10000) {
-      return next(new ErrorResponse('Cannot change likes by more than 10,000 in a single request', 400));
+    if (likesNum > 100000000) {
+      return next(new ErrorResponse('Likes cannot exceed 100,000,000 per request', 400));
     }
-
-    if (likesDelta > 0) {
-      // Need to add likes
-      const mongoose = require('mongoose');
-      const newLikes = Array.from({ length: likesDelta }, () => new mongoose.Types.ObjectId());
-      video.likes.push(...newLikes);
-    } else if (likesDelta < 0) {
-      // Need to remove likes - remove from the end
-      const removeCount = Math.abs(likesDelta);
-      video.likes = video.likes.slice(0, Math.max(0, video.likes.length - removeCount));
-    }
-    // If likesDelta === 0, no change needed
+    video.likes = likesNum;
   }
 
   await video.save();
@@ -617,7 +613,7 @@ exports.updateVideoMetrics = asyncHandler(async (req, res, next) => {
   // Return updated video
   const updatedVideo = await Video.findById(videoId)
     .populate('creator', 'username profilePicture')
-    .select('-likes'); // Don't return the full likes array to reduce payload
+    .select('views likes');
 
   res.status(200).json({
     success: true,
@@ -626,7 +622,7 @@ exports.updateVideoMetrics = asyncHandler(async (req, res, next) => {
       video: {
         _id: updatedVideo._id,
         views: updatedVideo.views,
-        likesCount: video.likes ? video.likes.length : 0
+        likesCount: typeof video.likes === 'number' ? video.likes : 0
       }
     }
   });

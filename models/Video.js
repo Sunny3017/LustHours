@@ -67,10 +67,10 @@ const videoSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
-  likes: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
+  likes: {
+    type: Number,
+    default: 0
+  },
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category'
@@ -81,20 +81,6 @@ const videoSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true
-});
-
-// Remove duplicate likes before saving
-videoSchema.pre('save', function(next) {
-  if (this.isModified('likes') && Array.isArray(this.likes)) {
-    const seen = new Set();
-    this.likes = this.likes.filter(id => {
-      const idStr = id.toString();
-      if (seen.has(idStr)) return false;
-      seen.add(idStr);
-      return true;
-    });
-  }
-  next();
 });
 
 // Indexes
