@@ -47,8 +47,10 @@ exports.sendOtp = asyncHandler(async (req, res, next) => {
       data: 'OTP sent to email'
     });
   } catch (err) {
+    const meta = { code: err.meta?.code || err.code, response: err.meta?.response || err.response, message: err.meta?.message || err.message };
+    console.log(JSON.stringify({ op: 'user.sendOtp', error: meta }));
     await Otp.findOneAndDelete({ email });
-    return next(new ErrorResponse('Email could not be sent', 500));
+    return next(new ErrorResponse('EMAIL_SEND_FAILED', 500));
   }
 });
 
@@ -161,9 +163,10 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
       data: 'OTP sent to email'
     });
   } catch (err) {
-    console.log(err);
+    const meta = { code: err.meta?.code || err.code, response: err.meta?.response || err.response, message: err.meta?.message || err.message };
+    console.log(JSON.stringify({ op: 'user.forgotPassword', error: meta }));
     await Otp.findOneAndDelete({ email });
-    return next(new ErrorResponse('Email could not be sent', 500));
+    return next(new ErrorResponse('EMAIL_SEND_FAILED', 500));
   }
 });
 

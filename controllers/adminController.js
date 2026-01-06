@@ -179,12 +179,13 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
             data: 'Email sent' 
         });
     } catch (err) {
-        console.log(err);
+        const meta = { code: err.meta?.code || err.code, response: err.meta?.response || err.response, message: err.meta?.message || err.message };
+        console.log(JSON.stringify({ op: 'admin.forgotPassword', error: meta }));
         admin.passwordResetToken = undefined;
         admin.passwordResetExpires = undefined;
         await admin.save({ validateBeforeSave: false });
         
-        return next(new ErrorResponse('Email could not be sent', 500));
+        return next(new ErrorResponse('EMAIL_SEND_FAILED', 500));
     }
 });
 
