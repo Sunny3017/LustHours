@@ -118,13 +118,13 @@ app.get('/sitemap.xml', async (req, res) => {
         const urls = [
             {
                 loc: `${baseUrl}/`,
-                changefreq: 'daily',
+                changefreq: 'weekly',
                 priority: 1.0
             },
             ...videos.map(video => ({
                 loc: `${baseUrl}/watch/${video._id.toString()}`,
                 lastmod: video.updatedAt ? video.updatedAt.toISOString() : undefined,
-                changefreq: 'daily',
+                changefreq: 'weekly',
                 priority: 0.9
             }))
         ];
