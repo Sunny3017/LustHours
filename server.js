@@ -9,6 +9,10 @@ const xss = require('xss-clean');
 const rateLimit = require('express-rate-limit');
 const hpp = require('hpp');
 const cors = require('cors');
+const path = require('path');
+const prerender = require('prerender-node');
+
+const Video = require('./models/Video');
 
 // Load env vars
 dotenv.config();
@@ -44,13 +48,32 @@ if (process.env.NODE_ENV === 'development') {
     app.use(morgan('dev'));
 }
 
-// Enable CORS for Next.js frontend
+const allowedOrigins = [
+    'https://lusthours.fun',
+    'https://www.lusthours.fun',
+    process.env.BASE_URL,
+    'http://localhost:5173',
+    'http://localhost:3000'
+].filter(Boolean);
+
 app.use(cors({
-    origin: true,
+    origin(origin, callback) {
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+
+        return callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
+app.options('*', cors());
 
 // Sanitize data
 app.use(mongoSanitize());
@@ -82,10 +105,98 @@ app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/videos', videoRoutes);
 
+// Dynamic sitemap.xml
+app.get('/sitemap.xml', async (req, res) => {
+    try {
+        const baseUrl = process.env.BASE_URL || 'https://lusthours.fun';
+
+        const videos = await Video.find({ status: 'approved' })
+            .select('_id updatedAt')
+            .sort({ updatedAt: -1 })
+            .lean();
+
+        const urls = [
+            {
+                loc: `${baseUrl}/`,
+                changefreq: 'daily',
+                priority: 1.0
+            },
+            ...videos.map(video => ({
+                loc: `${baseUrl}/watch/${video._id.toString()}`,
+                lastmod: video.updatedAt ? video.updatedAt.toISOString() : undefined,
+                changefreq: 'daily',
+                priority: 0.9
+            }))
+        ];
+
+        const xmlUrls = urls.map(url => {
+            return `
+    <url>
+        <loc>${url.loc}</loc>${url.lastmod ? `
+        <lastmod>${url.lastmod}</lastmod>` : ''}
+        <changefreq>${url.changefreq}</changefreq>
+        <priority>${url.priority}</priority>
+    </url>`;
+        }).join('');
+
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${xmlUrls}
+</urlset>`;
+
+        res.header('Content-Type', 'application/xml');
+        res.send(xml);
+    } catch (error) {
+        console.error('Error generating sitemap:', error);
+        res.status(500).send('Error generating sitemap');
+    }
+});
+
+// Robots.txt
+app.get('/robots.txt', (req, res) => {
+    const baseUrl = process.env.BASE_URL || 'https://lusthours.fun';
+
+    const robots = [
+        'User-agent: *',
+        'Allow: /',
+        '',
+        'Disallow: /api/',
+        '',
+        `Sitemap: ${baseUrl}/sitemap.xml`,
+        ''
+    ].join('\n');
+
+    res.type('text/plain').send(robots);
+});
+
 // Health check route
 app.get('/', (req, res) => {
     res.send('API is live 🚀');
 });
+
+if (process.env.NODE_ENV === 'production') {
+    const prerenderToken = process.env.PRERENDER_TOKEN || '';
+
+    if (prerenderToken) {
+        app.use(
+            prerender
+                .set('prerenderToken', prerenderToken)
+                .set('protocol', 'https')
+                .whitelisted(['/watch', '/watch/*'])
+        );
+    }
+
+    const frontendPath = path.join(__dirname, '../frontend/dist');
+    app.use(express.static(frontendPath));
+
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api')) {
+            return next();
+        }
+
+        res.sendFile(path.join(frontendPath, 'index.html'));
+    });
+}
 
 // 404 handler
 app.use('*', (req, res) => {
