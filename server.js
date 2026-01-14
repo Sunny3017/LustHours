@@ -211,11 +211,23 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-// Start server function
+const removeVideoUniqueIndexes = async () => {
+    try {
+        const indexes = await Video.collection.indexes();
+        for (const index of indexes) {
+            if (index.unique && index.name !== '_id_') {
+                await Video.collection.dropIndex(index.name);
+            }
+        }
+    } catch (err) {
+        console.error('Failed to adjust video indexes:', err.message);
+    }
+};
+
 const startServer = async () => {
     try {
-        // Connect to database
         await connectDB();
+        await removeVideoUniqueIndexes();
         
         const server = app.listen(PORT, () => {
             console.log(`
