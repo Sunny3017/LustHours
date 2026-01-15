@@ -11,6 +11,7 @@ const hpp = require('hpp');
 const cors = require('cors');
 const path = require('path');
 const prerender = require('prerender-node');
+const mongoose = require('mongoose');
 
 const Video = require('./models/Video');
 
@@ -105,42 +106,131 @@ app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/videos', videoRoutes);
 
+const generateSeoSlug = (title) => {
+    return String(title || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[\s\-_]+/g, '-')
+        .replace(/[^a-z0-9-]/g, '')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+};
+
+const escapeXml = (str) => {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+};
+
+app.get('/watch/:id', async (req, res, next) => {
+    try {
+        const { id } = req.params;
+
+        if (!mongoose.isValidObjectId(id)) {
+            return next();
+        }
+
+        const video = await Video.findById(id).select('title');
+
+        if (!video) {
+            return next();
+        }
+
+        const slug = generateSeoSlug(video.title);
+        const canonicalPath = `/watch/${video._id.toString()}/${slug}`;
+
+        return res.redirect(301, canonicalPath);
+    } catch (err) {
+        return next(err);
+    }
+});
+
+app.get('/watch/:id/:slug', async (req, res, next) => {
+    try {
+        const { id, slug } = req.params;
+
+        if (!mongoose.isValidObjectId(id)) {
+            return next();
+        }
+
+        const video = await Video.findById(id).select('title');
+
+        if (!video) {
+            return next();
+        }
+
+        const expectedSlug = generateSeoSlug(video.title);
+
+        if (!expectedSlug) {
+            return next();
+        }
+
+        if (slug !== expectedSlug) {
+            const canonicalPath = `/watch/${video._id.toString()}/${expectedSlug}`;
+            return res.redirect(301, canonicalPath);
+        }
+
+        return next();
+    } catch (err) {
+        return next(err);
+    }
+});
+
 // Dynamic sitemap.xml
 app.get('/sitemap.xml', async (req, res) => {
     try {
         const baseUrl = process.env.BASE_URL || 'https://lusthours.fun';
-
+        
         const videos = await Video.find({ status: 'approved' })
-            .select('_id updatedAt')
+            .select('_id title description thumbnailUrl createdAt updatedAt duration views')
             .sort({ updatedAt: -1 })
             .lean();
-
-        const urls = [
-            {
-                loc: `${baseUrl}/`,
-                changefreq: 'weekly',
-                priority: 1.0
-            },
-            ...videos.map(video => ({
-                loc: `${baseUrl}/watch/${video._id.toString()}`,
-                lastmod: video.updatedAt ? video.updatedAt.toISOString() : undefined,
-                changefreq: 'weekly',
-                priority: 0.9
-            }))
-        ];
-
-        const xmlUrls = urls.map(url => {
-            return `
+        
+        const xmlUrls = [
+            `
     <url>
-        <loc>${url.loc}</loc>${url.lastmod ? `
-        <lastmod>${url.lastmod}</lastmod>` : ''}
-        <changefreq>${url.changefreq}</changefreq>
-        <priority>${url.priority}</priority>
+        <loc>${baseUrl}/</loc>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+    </url>`,
+            ...videos.map(video => {
+                const seoSlug = generateSeoSlug(video.title || '');
+                const loc = seoSlug
+                    ? `${baseUrl}/watch/${video._id.toString()}/${seoSlug}`
+                    : `${baseUrl}/watch/${video._id.toString()}`;
+                const lastmod = video.updatedAt ? video.updatedAt.toISOString() : undefined;
+                const uploadDate = video.createdAt ? video.createdAt.toISOString() : undefined;
+                const duration = typeof video.duration === 'number' ? video.duration : 0;
+                const views = typeof video.views === 'number' ? video.views : 0;
+                const title = escapeXml(video.title || '');
+                const description = escapeXml(video.description || '');
+                const thumbnail = video.thumbnailUrl || '';
+
+                return `
+    <url>
+        <loc>${loc}</loc>${lastmod ? `
+        <lastmod>${lastmod}</lastmod>` : ''}
+        <changefreq>weekly</changefreq>
+        <priority>0.9</priority>
+        <video:video>
+            <video:title>${title}</video:title>${description ? `
+            <video:description>${description}</video:description>` : ''}${thumbnail ? `
+            <video:thumbnail_loc>${thumbnail}</video:thumbnail_loc>` : ''}${uploadDate ? `
+            <video:publication_date>${uploadDate}</video:publication_date>` : ''}${duration ? `
+            <video:duration>${duration}</video:duration>` : ''}${views ? `
+            <video:view_count>${views}</video:view_count>` : ''}
+            <video:player_loc>${loc}</video:player_loc>
+        </video:video>
     </url>`;
-        }).join('');
+            })
+        ].join('');
 
         const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
 ${xmlUrls}
 </urlset>`;
 
@@ -237,6 +327,7 @@ const startServer = async () => {
             🔗 API: http://localhost:${PORT}/api/v1
             🗄️  MongoDB: Atlas Connected
             👑 Admin: ${process.env.ADMIN_EMAIL}
+               Everything is oki hai chadhary sahb
             `.cyan.bold);
             
             console.log('\n📋 Available endpoints:');
