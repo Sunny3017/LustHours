@@ -12,6 +12,7 @@ const cors = require('cors');
 const path = require('path');
 const prerender = require('prerender-node');
 const mongoose = require('mongoose');
+const compression = require('compression');
 
 const Video = require('./models/Video');
 
@@ -43,6 +44,18 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Cookie parser
 app.use(cookieParser());
+
+app.use(
+    compression({
+        threshold: 1024,
+        filter(req, res) {
+            if (req.headers['x-no-compression']) {
+                return false;
+            }
+            return compression.filter(req, res);
+        }
+    })
+);
 
 // Dev logging middleware
 if (process.env.NODE_ENV === 'development') {
@@ -277,7 +290,27 @@ if (process.env.NODE_ENV === 'production') {
     }
 
     const frontendPath = path.join(__dirname, '../frontend/dist');
-    app.use(express.static(frontendPath));
+    app.use(
+        express.static(frontendPath, {
+            maxAge: '30d',
+            setHeaders(res, filePath) {
+                if (filePath.endsWith('.html')) {
+                    res.setHeader('Cache-Control', 'no-cache');
+                } else if (
+                    filePath.endsWith('.js') ||
+                    filePath.endsWith('.css') ||
+                    filePath.endsWith('.png') ||
+                    filePath.endsWith('.jpg') ||
+                    filePath.endsWith('.jpeg') ||
+                    filePath.endsWith('.webp') ||
+                    filePath.endsWith('.avif') ||
+                    filePath.endsWith('.svg')
+                ) {
+                    res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+                }
+            }
+        })
+    );
 
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) {
