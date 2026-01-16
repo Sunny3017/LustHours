@@ -10,26 +10,26 @@ const sendEmail = async (options) => {
 
     const from = fromName ? `"${fromName}" <${fromAddress}>` : fromAddress;
 
-    const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: false, // true for 465, false for other ports
-        auth: { user, pass },
-        pool: true,
-        maxConnections: 3,
-        maxMessages: 50,
-        // Timeouts to prevent ETIMEDOUT hangs on Render
-        connectionTimeout: 10000, // 10 seconds
-        greetingTimeout: 5000,    // 5 seconds
-        socketTimeout: 15000,     // 15 seconds
-        // TLS settings for better compatibility
-        tls: {
-            rejectUnauthorized: false,
-            ciphers: 'SSLv3'
+    const transporter = nodemailer.createTransport(
+        {
+            host,
+            port,
+            secure: false,
+            auth: { user, pass },
+            pool: true,
+            maxConnections: 3,
+            maxMessages: 50,
+            connectionTimeout: 8000,
+            greetingTimeout: 4000,
+            socketTimeout: 12000,
+            tls: {
+                rejectUnauthorized: false
+            },
+            debug: process.env.NODE_ENV !== 'production',
+            logger: process.env.NODE_ENV !== 'production'
         },
-        debug: process.env.NODE_ENV !== 'production',
-        logger: process.env.NODE_ENV !== 'production'
-    }, { from });
+        { from }
+    );
 
     const mailOptions = {
         from,
@@ -44,7 +44,6 @@ const sendEmail = async (options) => {
         console.log(`Email sent: ${info.messageId}`);
         return info;
     } catch (error) {
-        // Log the full error for debugging
         const meta = {
             code: error.code,
             response: error.response,
@@ -52,8 +51,7 @@ const sendEmail = async (options) => {
             command: error.command
         };
         console.error(JSON.stringify({ op: 'sendEmail', error: meta }));
-        
-        // Enhance error object
+
         const e = new Error('EMAIL_SEND_FAILED');
         e.statusCode = 500;
         e.meta = meta;
