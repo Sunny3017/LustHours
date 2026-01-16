@@ -47,10 +47,13 @@ exports.sendOtp = asyncHandler(async (req, res, next) => {
       data: 'OTP sent to email'
     });
   } catch (err) {
-    const meta = { code: err.meta?.code || err.code, response: err.meta?.response || err.response, message: err.meta?.message || err.message };
-    console.log(JSON.stringify({ op: 'user.sendOtp', error: meta }));
+    // If email fails, delete the OTP so user can try again cleanly
     await Otp.findOneAndDelete({ email });
-    return next(new ErrorResponse('EMAIL_SEND_FAILED', 500));
+    
+    // Log error for Render debugging
+    console.error(`SendOTP Error for ${email}:`, err.message);
+    
+    return next(new ErrorResponse('Email could not be sent. Please try again later.', 500));
   }
 });
 

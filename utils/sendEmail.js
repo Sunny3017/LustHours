@@ -13,14 +13,22 @@ const sendEmail = async (options) => {
     const transporter = nodemailer.createTransport({
         host,
         port,
-        secure: false,
+        secure: false, // true for 465, false for other ports
         auth: { user, pass },
         pool: true,
         maxConnections: 3,
         maxMessages: 50,
-        connectionTimeout: 15000,
-        socketTimeout: 20000,
-        tls: { minVersion: 'TLSv1.2' }
+        // Timeouts to prevent ETIMEDOUT hangs on Render
+        connectionTimeout: 10000, // 10 seconds
+        greetingTimeout: 5000,    // 5 seconds
+        socketTimeout: 15000,     // 15 seconds
+        // TLS settings for better compatibility
+        tls: {
+            rejectUnauthorized: false,
+            ciphers: 'SSLv3'
+        },
+        debug: process.env.NODE_ENV !== 'production',
+        logger: process.env.NODE_ENV !== 'production'
     }, { from });
 
     const mailOptions = {
@@ -33,24 +41,23 @@ const sendEmail = async (options) => {
 
     try {
         const info = await transporter.sendMail(mailOptions);
+        console.log(`Email sent: ${info.messageId}`);
         return info;
     } catch (error) {
-        try {
-            await transporter.verify();
-            const info2 = await transporter.sendMail(mailOptions);
-            return info2;
-        } catch (err2) {
-            const meta = {
-                code: err2.code || error.code,
-                response: err2.response || error.response,
-                message: err2.message || error.message
-            };
-            console.error(JSON.stringify({ op: 'sendEmail', error: meta }));
-            const e = new Error('EMAIL_SEND_FAILED');
-            e.statusCode = 500;
-            e.meta = meta;
-            throw e;
-        }
+        // Log the full error for debugging
+        const meta = {
+            code: error.code,
+            response: error.response,
+            message: error.message,
+            command: error.command
+        };
+        console.error(JSON.stringify({ op: 'sendEmail', error: meta }));
+        
+        // Enhance error object
+        const e = new Error('EMAIL_SEND_FAILED');
+        e.statusCode = 500;
+        e.meta = meta;
+        throw e;
     }
 };
 
