@@ -3,7 +3,10 @@ const Otp = require('../models/Otp');
 const ErrorResponse = require('../utils/errorResponse');
 const asyncHandler = require('../middleware/async');
 const { uploadToCloudinary } = require('../config/cloudinary');
-const sendEmail = require('../utils/sendEmail');
+const {
+  sendSignupOtpEmail,
+  sendPasswordResetOtpEmail
+} = require('../services/emailService');
 const crypto = require('crypto');
 
 // @desc    Send OTP for registration
@@ -33,14 +36,8 @@ exports.sendOtp = asyncHandler(async (req, res, next) => {
   );
 
   // Send Email
-  const message = `Your verification code for LastHours is: ${otp}\n\nThis code expires in 5 minutes.`;
-  
   try {
-    await sendEmail({
-      email,
-      subject: 'LastHours - Email Verification',
-      message
-    });
+    await sendSignupOtpEmail({ email, otp });
 
     res.status(200).json({
       success: true,
@@ -145,21 +142,8 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
     { upsert: true, new: true }
   );
 
-  const message = `You are receiving this email because you (or someone else) has requested the reset of a password. \n\n Your Password Reset OTP is: ${otp} \n\n This OTP is valid for 5 minutes.`;
-
   try {
-    await sendEmail({
-      email: user.email,
-      subject: 'Password Reset OTP',
-      message,
-      html: `
-        <h1>Password Reset Request</h1>
-        <p>Your OTP for password reset is:</p>
-        <h2 style="color: #4A90E2; letter-spacing: 5px;">${otp}</h2>
-        <p>This code will expire in 5 minutes.</p>
-        <p>If you did not request this, please ignore this email.</p>
-      `
-    });
+    await sendPasswordResetOtpEmail({ email: user.email, otp });
 
     res.status(200).json({
       success: true,

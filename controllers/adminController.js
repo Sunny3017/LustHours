@@ -1,7 +1,9 @@
 const Admin = require('../models/Admin');
 const asyncHandler = require('../middleware/async');
 const ErrorResponse = require('../utils/errorResponse');
-const sendEmail = require('../utils/sendEmail');
+const {
+    sendPasswordResetLinkEmail
+} = require('../services/emailService');
 const crypto = require('crypto');
 
 // @desc    Register admin
@@ -163,16 +165,8 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
     await admin.save({ validateBeforeSave: false });
     
     // Create reset URL
-    const resetUrl = `${req.protocol}://${req.get('host')}/api/v1/auth/admin/resetpassword/${resetToken}`;
-    
-    const message = `You are receiving this email because you (or someone else) has requested the reset of a password. Please make a PUT request to: \n\n ${resetUrl}`;
-    
     try {
-        await sendEmail({
-            email: admin.email,
-            subject: 'Password reset token',
-            message
-        });
+        await sendPasswordResetLinkEmail({ email: admin.email, resetToken });
         
         res.status(200).json({ 
             success: true, 

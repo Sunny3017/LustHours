@@ -1,8 +1,27 @@
+const dotenv = require('dotenv');
 const resendLib = require('resend');
+
+if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
+    dotenv.config();
+}
 
 const { Resend } = resendLib;
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+const hasKey = !!process.env.RESEND_API_KEY;
+const hasFrom = !!process.env.FROM_EMAIL;
+
+if (process.env.NODE_ENV !== 'production') {
+    console.log(
+        JSON.stringify({
+            op: 'email.init',
+            provider: 'resend',
+            hasApiKey: hasKey,
+            hasFromEmail: hasFrom
+        })
+    );
+}
 
 const sendEmail = async (options) => {
     const fromAddress = process.env.FROM_EMAIL;
