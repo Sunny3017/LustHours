@@ -29,6 +29,8 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const productRoutes = require('./routes/productRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const playboyJobRoutes = require('./routes/playboyJobRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const contactRoutes = require('./routes/contactRoutes');
 
 // Error handler
 const errorHandler = require('./middleware/error');
@@ -120,6 +122,8 @@ app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/videos', videoRoutes);
 app.use('/api/v1/playboy-job', playboyJobRoutes);
+app.use('/api/v1/orders', orderRoutes);
+app.use('/api/v1/contact', contactRoutes);
 
 const generateSeoSlug = (title) => {
     return String(title || '')

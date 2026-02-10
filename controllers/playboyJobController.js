@@ -56,10 +56,6 @@ exports.submitUTR = asyncHandler(async (req, res, next) => {
 
   application.utrNumber = utrNumber;
   application.paymentStatus = 'verified'; // Assuming auto-verified for now or 'pending' if manual check needed. User said "database me aa jaye". 'pending' is safer.
-  // Wait, user said "payment successfull nahi hui to utr number daal do".
-  // Usually this means manual verification. I'll set it to 'pending' verification or just save it.
-  // Let's stick to 'pending' as default status but update UTR.
-  // Actually, I'll update status to 'pending' (it was already default) but explicitly save UTR.
   
   await application.save();
 
@@ -67,5 +63,36 @@ exports.submitUTR = asyncHandler(async (req, res, next) => {
     success: true,
     message: 'UTR Submitted Successfully',
     data: application
+  });
+});
+
+// @desc    Get all job applications
+// @route   GET /api/playboy-job
+// @access  Private/Admin
+exports.getJobApplications = asyncHandler(async (req, res, next) => {
+  const applications = await PlayboyJobApplication.find().sort('-createdAt');
+
+  res.status(200).json({
+    success: true,
+    count: applications.length,
+    data: applications
+  });
+});
+
+// @desc    Delete job application
+// @route   DELETE /api/playboy-job/:id
+// @access  Private/Admin
+exports.deleteJobApplication = asyncHandler(async (req, res, next) => {
+  const application = await PlayboyJobApplication.findById(req.params.id);
+
+  if (!application) {
+    return next(new ErrorResponse(`Application not found with id of ${req.params.id}`, 404));
+  }
+
+  await application.deleteOne();
+
+  res.status(200).json({
+    success: true,
+    data: {}
   });
 });

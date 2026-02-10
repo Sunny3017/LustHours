@@ -10,23 +10,19 @@ const categorySchema = new mongoose.Schema({
     maxlength: [50, 'Name can not be more than 50 characters']
   },
   slug: String,
-  description: {
-    type: String,
-    maxlength: [500, 'Description can not be more than 500 characters']
-  },
-  image: {
-    type: String,
-    default: 'no-photo.jpg'
-  },
-  parent: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category',
+  icon: {
+    type: String, // Cloudinary URL or icon class
     default: null
+  },
+  type: {
+    type: String,
+    enum: ['video', 'product'],
+    default: 'video'
   },
   status: {
     type: String,
     enum: ['pending', 'approved', 'rejected'],
-    default: 'approved'
+    default: 'pending'
   },
   creator: {
     type: mongoose.Schema.Types.ObjectId,
@@ -34,8 +30,9 @@ const categorySchema = new mongoose.Schema({
   },
   creatorModel: {
     type: String,
+    required: true,
     enum: ['User', 'Admin'],
-    default: 'User'
+    default: 'Admin'
   },
   isActive: {
     type: Boolean,
@@ -52,7 +49,9 @@ const categorySchema = new mongoose.Schema({
 
 // Create category slug from the name
 categorySchema.pre('save', function(next) {
-  this.slug = slugify(this.name, { lower: true });
+  if (this.name) {
+    this.slug = slugify(this.name, { lower: true });
+  }
   next();
 });
 

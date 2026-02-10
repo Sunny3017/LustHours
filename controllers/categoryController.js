@@ -1,12 +1,25 @@
 const Category = require('../models/Category');
 const ErrorResponse = require('../utils/errorResponse');
 const asyncHandler = require('../middleware/async');
+const { uploadToCloudinary } = require('../config/cloudinary');
 
-// @desc    Get all public categories
+// @desc    Get all categories
 // @route   GET /api/v1/categories
 // @access  Public
 exports.getCategories = asyncHandler(async (req, res, next) => {
-  const categories = await Category.find({ status: 'approved', isActive: true }).populate('parent');
+  const query = { isActive: true };
+  
+  // Filter by type if provided
+  if (req.query.type) {
+    if (req.query.type === 'video') {
+      // Include legacy categories (undefined/null type) as video categories
+      query.$or = [{ type: 'video' }, { type: { $exists: false } }, { type: null }];
+    } else {
+      query.type = req.query.type;
+    }
+  }
+
+  const categories = await Category.find(query).populate('creator', 'username email');
 
   res.status(200).json({
     success: true,
@@ -15,13 +28,18 @@ exports.getCategories = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Get all categories (Admin)
-// @route   GET /api/v1/categories/admin/all
-// @access  Private (Admin)
+// @desc    Get all categories (Admin - includes inactive)
+// @route   GET /api/categories/admin/all
+// @access  Private/Admin
 exports.getAdminCategories = asyncHandler(async (req, res, next) => {
-  const categories = await Category.find()
-    .populate('parent')
-    .populate('creator', 'name email username');
+  const query = {};
+  
+  // Filter by type if provided
+  if (req.query.type) {
+    query.type = req.query.type;
+  }
+
+  const categories = await Category.find(query);
 
   res.status(200).json({
     success: true,
@@ -34,9 +52,7 @@ exports.getAdminCategories = asyncHandler(async (req, res, next) => {
 // @route   GET /api/v1/categories/:id
 // @access  Public
 exports.getCategory = asyncHandler(async (req, res, next) => {
-  const category = await Category.findById(req.params.id)
-    .populate('parent')
-    .populate('creator', 'name username');
+  const category = await Category.findById(req.params.id);
 
   if (!category) {
     return next(new ErrorResponse(`Category not found with id of ${req.params.id}`, 404));
@@ -50,28 +66,38 @@ exports.getCategory = asyncHandler(async (req, res, next) => {
 
 // @desc    Create category
 // @route   POST /api/v1/categories
-// @access  Private (User/Admin)
+// @access  Private (Admin)
 exports.createCategory = asyncHandler(async (req, res, next) => {
-  // Determine creator and initial status
-  let status = 'pending';
-  let creator = null;
-  let creatorModel = 'User';
-
-  if (req.admin) {
-    status = 'approved';
-    creator = req.admin.id;
-    creatorModel = 'Admin';
-  } else if (req.user) {
-    creator = req.user.id;
-    creatorModel = 'User';
+  // Handle icon upload if present
+  if (req.file) {
+    const result = await uploadToCloudinary(req.file.buffer, 'categories');
+    req.body.icon = result.secure_url;
   }
 
-  const category = await Category.create({
-    ...req.body,
-    status,
-    creator,
-    creatorModel
-  });
+  // Ensure type is set if provided in body (defaults to 'video' in model)
+  // But we want to allow setting it explicitly
+  
+  // Set creator and status for admin created categories
+  // Check if req.user or req.admin exists (authentication middleware should ensure this)
+  let creatorId;
+  let creatorModel;
+
+  if (req.user) {
+    creatorId = req.user.id || req.user._id;
+    creatorModel = 'User';
+  } else if (req.admin) {
+    creatorId = req.admin.id || req.admin._id;
+    creatorModel = 'Admin';
+  } else {
+     // Fallback if no user attached (should not happen in protected route)
+     return next(new ErrorResponse('User authentication required', 401));
+  }
+  
+  req.body.creator = creatorId;
+  req.body.creatorModel = creatorModel;
+  req.body.status = 'approved';
+
+  const category = await Category.create(req.body);
 
   res.status(201).json({
     success: true,
@@ -79,30 +105,32 @@ exports.createCategory = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Update category status
-// @route   PUT /api/v1/categories/:id/status
+// @desc    Update category
+// @route   PUT /api/v1/categories/:id
 // @access  Private (Admin)
-exports.updateCategoryStatus = asyncHandler(async (req, res, next) => {
-    const { status } = req.body;
-  
-    if (!['approved', 'rejected', 'pending'].includes(status)) {
-      return next(new ErrorResponse('Invalid status', 400));
-    }
-  
-    const category = await Category.findByIdAndUpdate(req.params.id, { status }, {
-      new: true,
-      runValidators: true
-    });
-  
-    if (!category) {
-      return next(new ErrorResponse(`Category not found with id of ${req.params.id}`, 404));
-    }
-  
-    res.status(200).json({
-      success: true,
-      data: category
-    });
+exports.updateCategory = asyncHandler(async (req, res, next) => {
+  let category = await Category.findById(req.params.id);
+
+  if (!category) {
+    return next(new ErrorResponse(`Category not found with id of ${req.params.id}`, 404));
+  }
+
+  // Handle icon upload if present
+  if (req.file) {
+    const result = await uploadToCloudinary(req.file.buffer, 'categories');
+    req.body.icon = result.secure_url;
+  }
+
+  category = await Category.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true
   });
+
+  res.status(200).json({
+    success: true,
+    data: category
+  });
+});
 
 // @desc    Delete category
 // @route   DELETE /api/v1/categories/:id
@@ -119,26 +147,5 @@ exports.deleteCategory = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: {}
-  });
-});
-
-// @desc    Update category
-// @route   PUT /api/v1/categories/:id
-// @access  Private (Admin)
-exports.updateCategory = asyncHandler(async (req, res, next) => {
-  let category = await Category.findById(req.params.id);
-
-  if (!category) {
-    return next(new ErrorResponse(`Category not found with id of ${req.params.id}`, 404));
-  }
-
-  category = await Category.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true
-  });
-
-  res.status(200).json({
-    success: true,
-    data: category
   });
 });
